@@ -1,7 +1,7 @@
 /*
  * phaselock.c - Phase locking for NTP client
  *
- * Copyright 2000, 2007  Larry Doolittle  <larry@doolittle.boa.org>
+ * Copyright (C) 2000, 2007  Larry Doolittle  <larry@doolittle.boa.org>
  * Last hack: 30 December, 2007
  *
  *  This program is free software; you can redistribute it and/or modify

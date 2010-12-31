@@ -1,8 +1,7 @@
 /*
  * ntpclient.c - NTP client
  *
- * Copyright 1997, 1999, 2000, 2003, 2006, 2007  Larry Doolittle  <larry@doolittle.boa.org>
- * Last hack: December 30, 2007
+ * Copyright (C) 1997, 1999, 2000, 2003, 2006, 2007, 2010  Larry Doolittle  <larry@doolittle.boa.org>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License (Version 2,
@@ -33,10 +32,7 @@
  */
 
 #define _POSIX_C_SOURCE 199309
-
-#ifdef USE_OBSOLETE_GETTIMEOFDAY
 #define _BSD_SOURCE
-#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -87,6 +83,7 @@ typedef uint32_t u32;  /* universal for C99 */
 #include <sys/utsname.h>
 #include <sys/time.h>
 #include <sys/timex.h>
+#include <netdb.h>
 #else
 extern struct hostent *gethostbyname(const char *name);
 extern int h_errno;
@@ -146,7 +143,7 @@ static int get_current_freq(void)
 #ifdef __linux__
 	struct timex txc;
 	txc.modes=0;
-	if (__adjtimex(&txc) < 0) {
+	if (adjtimex(&txc) < 0) {
 		perror("adjtimex"); exit(1);
 	}
 	return txc.freq;
@@ -163,7 +160,7 @@ static int set_freq(int new_freq)
 	struct timex txc;
 	txc.modes = ADJ_FREQUENCY;
 	txc.freq = new_freq;
-	if (__adjtimex(&txc) < 0) {
+	if (adjtimex(&txc) < 0) {
 		perror("adjtimex"); exit(1);
 	}
 	return txc.freq;
@@ -260,7 +257,7 @@ static void get_packet_timestamp(int usd, struct ntptime *udp_arrival_ntp)
 	struct timeval udp_arrival;
 	if ( ioctl(usd, SIOCGSTAMP, &udp_arrival) < 0 ) {
 		perror("ioctl-SIOCGSTAMP");
-		gettimeofday(&udp_arrival,NULL);
+		gettimeofday(&udp_arrival, NULL);
 	}
 	udp_arrival_ntp->coarse = udp_arrival.tv_sec + JAN_1970;
 	udp_arrival_ntp->fine   = NTPFRAC(udp_arrival.tv_usec);
@@ -284,7 +281,7 @@ static int check_source(int data_len, struct sockaddr *sa_source, unsigned int s
 		}
 	}
 	/* we could check that the source is the server we expect, but
-	 * Denis Vlasenko recommends against it: multihomed hosts get it
+	 * Denys Vlasenko recommends against it: multihomed hosts get it
 	 * wrong too often. */
 #if 0
 	if (memcmp(ntpc->serv_addr, &(sa_in->sin_addr), 4)!=0) {
@@ -403,7 +400,7 @@ static int rfc1305print(u32 *data, struct ntptime *arrival, struct ntp_control *
 	}
 
 	/* XXX should I do this if debug flag is set? */
-	if (ntpc->set_clock) { /* you'd better be root, or ntpclient will crash! */
+	if (ntpc->set_clock) { /* you'd better be root, or ntpclient will exit here! */
 		set_time(&xmttime);
 	}
 
@@ -487,7 +484,7 @@ static void primary_loop(int usd, struct ntp_control *ntpc)
 	fd_set fds;
 	struct sockaddr sa_xmit;
 	int i, pack_len, probes_sent, error;
-	unsigned int sa_xmit_len;
+	socklen_t sa_xmit_len;
 	struct timeval to;
 	struct ntptime udp_arrival_ntp;
 	static u32 incoming_word[325];
@@ -536,7 +533,7 @@ static void primary_loop(int usd, struct ntp_control *ntpc)
 		/* best rollover option: specify -g, -s, and -l.
 		 * simpler rollover option: specify -s and -l, which
 		 * triggers a magic -c 1 */
-		if (( error < ntpc->goodness && ntpc->goodness != 0 ) ||
+		if ((error < ntpc->goodness && ntpc->goodness != 0) ||
 		    (probes_sent >= ntpc->probe_count && ntpc->probe_count != 0)) {
 			ntpc->set_clock = 0;
 			if (!ntpc->live) break;
@@ -571,7 +568,7 @@ static void do_replay(void)
 			if (debug) printf("fake %f %d \n", fake_delta_time, simulated_freq);
 			skew += fake_delta_time;
 			freq = simulated_freq;
-			last_fake_time=absolute;
+			last_fake_time = absolute;
 			simulated_freq = contemplate_data(absolute, skew, errorbar, freq);
 		} else {
 			fprintf(stderr,"Replay input error\n");
@@ -679,7 +676,7 @@ int main(int argc, char *argv[]) {
 
 	/* respect only applicable MUST of RFC-4330 */
 	if (ntpc.probe_count != 1 && ntpc.cycle_time < MIN_INTERVAL) {
-		ntpc.cycle_time=MIN_INTERVAL;
+		ntpc.cycle_time = MIN_INTERVAL;
 	}
 
 	if (debug) {

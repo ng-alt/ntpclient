@@ -4,10 +4,15 @@
 # To cross-compile
 #    CC = arm-linux-gcc
 # To check for lint
-# -Wundef not recognized by gcc-2.7.2.3
-CFLAGS += -std=c99 -W -Wall -Wpointer-arith -Wcast-align -Wcast-qual -Wshadow \
- -Waggregate-return -Wnested-externs -Winline -Wwrite-strings -Wstrict-prototypes
+#    CFLAGS += -Wpointer-arith -Wcast-align -Wcast-qual -Wshadow -Wundef \
+#     -Waggregate-return -Wnested-externs -Winline -Wwrite-strings -Wstrict-prototypes
 
+# This is old-school networking code, making the traditional cast between
+# struct sockaddr* and struct sockaddr_in*.  Thus a modern gcc needs:
+CFLAGS += -fno-strict-aliasing
+
+CFLAGS += -std=c89
+CFLAGS += -W -Wall
 CFLAGS += -O2
 # CFLAGS += -DPRECISION_SIOCGSTAMP
 CFLAGS += -DENABLE_DEBUG
