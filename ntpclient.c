@@ -1,39 +1,4 @@
-/*
- * ntpclient.c - NTP client
- *
- * Copyright 1997, 1999, 2000  Larry Doolittle  <larry@doolittle.boa.org>
- * Last hack: 2 December, 2000
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License (Version 2,
- *  June 1991) as published by the Free Software Foundation.  At the
- *  time of writing, that license was published by the FSF with the URL
- *  http://www.gnu.org/copyleft/gpl.html, and is incorporated herein by
- *  reference.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  Possible future improvements:
- *      - Double check that the originate timestamp in the received packet
- *        corresponds to what we sent.
- *      - Verify that the return packet came from the host we think
- *        we're talking to.  Not necessarily useful since UDP packets
- *        are so easy to forge.
- *      - Complete phase locking code.
- *      - Write more documentation  :-(
- *
- *  Compile with -D_PRECISION_SIOCGSTAMP if your machine really has it.
- *  There are patches floating around to add this to Linux, but
- *  usually you only get an answer to the nearest jiffy.
- *  Hint for Linux hacker wannabes: look at the usage of get_fast_time()
- *  in net/core/dev.c, and its definition in kernel/time.c .
- *
- *  If the compile gives you any flak, check below in the section
- *  labelled "XXXX fixme - non-automatic build configuration".
- */
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,9 +8,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <arpa/inet.h>
-#include <sys/utsname.h>
 #include <time.h>
-#include <sys/time.h>
 #include <unistd.h>
 #include <errno.h>
 #ifdef _PRECISION_SIOCGSTAMP
@@ -56,11 +19,14 @@
 
 extern char *optarg;
 
-/* XXXX fixme - non-automatic build configuration */
 #ifdef linux
+#include <sys/utsname.h>
+#include <sys/time.h>
 typedef u_int32_t __u32;
 #include <sys/timex.h>
 #else
+#define main ntpclient
+extern struct hostent *gethostbyname(const char *name);
 extern int h_errno;
 #define herror(hostname) \
 	fprintf(stderr,"Error %d looking up hostname %s\n", h_errno,hostname)
@@ -164,7 +130,7 @@ void send_packet(int usd)
 		fprintf(stderr,"size error\n");
 		return;
 	}
-	bzero(data,sizeof(data));
+	bzero((char*)data,sizeof(data));
 	data[0] = htonl (
 		( LI << 30 ) | ( VN << 27 ) | ( MODE << 24 ) |
 		( STRATUM << 16) | ( POLL << 8 ) | ( PREC & 0xff ) );
@@ -295,11 +261,13 @@ void rfc1305print(char *data, struct ntptime *arrival)
 	       " day   second     elapsed    stall     skew  dispersion  freq\n",
 		(skew1-skew2)/2, freq);
 	}
+	if (debug) {
 	printf("%d %5d.%.3d  %8.1f %8.1f  %8.1f %8.1f %9d\n",
 		arrival->coarse/86400+15020, arrival->coarse%86400,
 		arrival->fine/4294967, etime, stime,
 		(skew1-skew2)/2, sec2u(disp), freq);
 	fflush(stdout);
+	}
 	if (live) {
 		int new_freq;
 		new_freq = contemplate_data(arrival->coarse, (skew1-skew2)/2,
@@ -349,7 +317,7 @@ void setup_transmit(int usd, char *host, short port)
 		{perror("connect");exit(1);}
 }
 
-void primary_loop(int usd, int num_probes, int interval)
+int primary_loop(int usd, int num_probes, int cycle_time)
 {
 	fd_set fds;
 	struct sockaddr sa_xmit;
@@ -369,28 +337,30 @@ void primary_loop(int usd, int num_probes, int interval)
 		if ((i!=1)||(!FD_ISSET(usd,&fds))) {
 			if (i==EINTR) continue;
 			if (i<0) perror("select");
-			if (to.tv_sec == 0) {
+			if ((to.tv_sec == 0) || (to.tv_sec == cycle_time)) {
 				if (probes_sent >= num_probes &&
 					num_probes != 0) break;
 				send_packet(usd);
 				++probes_sent;
-				to.tv_sec=interval;
+				to.tv_sec=cycle_time;
 				to.tv_usec=0;
 			}	
 			continue;
 		}
 		pack_len=recvfrom(usd,incoming,sizeof(incoming),0,
-		                  &sa_xmit,&sa_xmit_len);
+		                  &sa_xmit,(socklen_t *)&sa_xmit_len);
 		if (pack_len<0) {
 			perror("recvfrom");
 		} else if (pack_len>0 && pack_len<sizeof(incoming)){
 			udp_handle(usd,incoming,pack_len,&sa_xmit,sa_xmit_len);
+			return 0;
 		} else {
 			printf("Ooops.  pack_len=%d\n",pack_len);
 			fflush(stdout);
 		}
 		if (probes_sent >= num_probes && num_probes != 0) break;
 	}
+	return -1;
 }
 
 void do_replay(void)
@@ -434,20 +404,35 @@ void usage(char *argv0)
 	argv0);
 }
 
+/* Copy each token in wordlist delimited by space into word */
+#define foreach(word, wordlist, next) \
+	for (next = &wordlist[strspn(wordlist, " ")], \
+	     strncpy(word, next, sizeof(word)), \
+	     word[strcspn(word, " ")] = '\0', \
+	     word[sizeof(word) - 1] = '\0', \
+	     next = strchr(next, ' '); \
+	     strlen(word); \
+	     next = next ? &next[strspn(next, " ")] : "", \
+	     strncpy(word, next, sizeof(word)), \
+	     word[strcspn(word, " ")] = '\0', \
+	     word[sizeof(word) - 1] = '\0', \
+	     next = strchr(next, ' '))
+
 int main(int argc, char *argv[]) {
 	int usd;  /* socket */
 	int c;
 	/* These parameters are settable from the command line
 	   the initializations here provide default behavior */
 	short int udp_local_port=0;   /* default of 0 means kernel chooses */
-	int cycle_time=600;           /* seconds */
+	int cycle_time=3;          /* request timeout in seconds */
 	int probe_count=0;            /* default of 0 means loop forever */
 	/* int debug=0; is a global above */
 	char *hostname=NULL;          /* must be set */
 	int replay=0;                 /* replay mode overrides everything */
+	char ntps[32], *next;
 
 	for (;;) {
-		c = getopt( argc, argv, "c:" DEBUG_OPTION "h:i:lp:rs");
+		c = getopt( argc, argv, "c:" DEBUG_OPTION "h:i:p:lrs");
 		if (c == EOF) break;
 		switch (c) {
 			case 'c':
@@ -474,7 +459,7 @@ int main(int argc, char *argv[]) {
 				replay++;
 				break;
 			case 's':
-				set_clock++;
+				set_clock = 1;
 				probe_count = 1;
 				break;
 			default:
@@ -482,6 +467,7 @@ int main(int argc, char *argv[]) {
 				exit(1);
 		}
 	}
+
 	if (replay) {
 		do_replay();
 		exit(0);
@@ -500,19 +486,28 @@ int main(int argc, char *argv[]) {
 		"  -p local_port  %d\n"
 		"  -s set_clock   %d\n",
 		probe_count, debug, hostname, cycle_time,
-		live, udp_local_port, set_clock );
+		live, udp_local_port, set_clock);
 	}
 
-	/* Startup sequence */
-	if ((usd=socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP))==-1)
-		{perror ("socket");exit(1);}
+	foreach(ntps, hostname, next) {
 
-	setup_receive(usd, INADDR_ANY, udp_local_port);
+		/* Startup sequence */
+		if ((usd=socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP))==-1) {
+			perror ("socket");
+			exit(1);
+		}
 
-	setup_transmit(usd, hostname, NTP_PORT);
+		setup_receive(usd, INADDR_ANY, udp_local_port);
 
-	primary_loop(usd, probe_count, cycle_time);
+		setup_transmit(usd, ntps, NTP_PORT);
 
-	close(usd);
+		if (!primary_loop(usd, probe_count, cycle_time)) {
+			close(usd);
+			break;
+		}
+
+		close(usd);
+	}
+	
 	return 0;
 }
