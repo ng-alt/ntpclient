@@ -1,4 +1,20 @@
 /*
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+ * MA 02111-1307 USA
+ */
+/*
  * phaselock.c - Phase locking for NTP client
  *
  * Copyright 2000  Larry Doolittle  <LRDoolittle@lbl.gov>
@@ -25,7 +41,7 @@
 
 #include <stdio.h>
 
-#define ENABLE_DEBUG
+//#define ENABLE_DEBUG
 
 #define RING_SIZE 16
 struct datum {
@@ -85,11 +101,11 @@ int search(int rp, int j, int s0, int s1, int sign, struct _seg *answer)
 	double dt, slope;
 	int n, nextj=0, cinit=1;
 	for (n=next_up(j); n!=next_up(rp); n=next_up(n)) {
-		if (0 && debug) printf("d_ring[%d].s.ss[%d]=%f d_ring[%d].s.ss[%d]=%f\n",
+		if (0 && debug) fprintf(stderr,"d_ring[%d].s.ss[%d]=%f d_ring[%d].s.ss[%d]=%f\n",
 			n, s0, d_ring[n].s.ss[s0], j, s1, d_ring[j].s.ss[s1]);
 		dt = d_ring[n].absolute - d_ring[j].absolute;
 		slope = (d_ring[n].s.ss[s0] - d_ring[j].s.ss[s1]) / dt;
-		if (0 && debug) printf("slope %d%d%d [%d,%d] = %f\n",
+		if (0 && debug) fprintf(stderr,"slope %d%d%d [%d,%d] = %f\n",
 			s0, s1, sign, j, n, slope);
 		if (cinit || (slope < answer->slope) ^ sign) {
 			answer->slope = slope;
@@ -143,7 +159,7 @@ double find_shift(double slope, double offset)
 	double shift  = slope - offset/600.0;
 	double shift2 = slope + 0.3 - offset/6000.0;
 	if (shift2 < shift) shift = shift2;
-	if (debug) printf("find_shift %f %f -> %f\n", slope, offset, shift);
+	if (debug) fprintf(stderr,"find_shift %f %f -> %f\n", slope, offset, shift);
 	if (shift  < 0) return 0.0;
 	return shift;
 }
@@ -151,13 +167,13 @@ double find_shift(double slope, double offset)
 void polygon_point(struct _seg *s)
 {
 	double l, r;
-	if (debug) printf("loop %f %f\n", s->slope, s->offset);
+	if (debug) fprintf(stderr,"loop %f %f\n", s->slope, s->offset);
 	l = find_shift(- s->slope,   s->offset);
 	r = find_shift(  s->slope, - s->offset);
 	if (l < df.l_min) df.l_min = l;
 	if (r < df.r_min) df.r_min = r;
-	if (debug) printf("constraint left:  %f %f \n", l, df.l_min);
-	if (debug) printf("constraint right: %f %f \n", r, df.r_min);
+	if (debug) fprintf(stderr,"constraint left:  %f %f \n", l, df.l_min);
+	if (debug) fprintf(stderr,"constraint right: %f %f \n", r, df.r_min);
 }
 
 /* Something like linear feedback to be used when we are "close" to
@@ -171,7 +187,7 @@ double find_df_center(struct _seg *min, struct _seg *max)
 	double doffset =      (max->offset - min->offset);
 	double delta = -offset/600.0 - slope;
 	double factor = 60.0/(doffset+dslope*600.0);
-	if (debug) printf("find_df_center %f %f\n", delta, factor);
+	if (debug) fprintf(stderr,"find_df_center %f %f\n", delta, factor);
 	return factor*delta;
 }
 
@@ -193,7 +209,7 @@ int contemplate_data(unsigned int absolute, double skew, double errorbar, int fr
 	int inconsistent=0, max_imax, max_imin=0, min_imax, min_imin=0;
 	int computed_freq=freq;
 
-	if (debug) printf("xontemplate %u %.1f %.1f %d\n",absolute,skew,errorbar,freq);
+	if (debug) fprintf(stderr,"xontemplate %u %.1f %.1f %d\n",absolute,skew,errorbar,freq);
 	d_ring[rp].absolute = absolute;
 	d_ring[rp].skew     = skew;
 	d_ring[rp].errorbar = errorbar - 800.0;   /* quick hack to speed things up */
@@ -204,11 +220,11 @@ int contemplate_data(unsigned int absolute, double skew, double errorbar, int fr
 		/*
 		 * Pass 1: correct for wandering freq's */
 		cum = 0.0;
-		if (debug) printf("\n");
+		if (debug) fprintf(stderr,"\n");
 		for (j=rp; ; j=n) {
 			d_ring[j].s.s.max = d_ring[j].skew - cum + d_ring[j].errorbar;
 			d_ring[j].s.s.min = d_ring[j].skew - cum - d_ring[j].errorbar;
-			if (debug) printf("hist %d %d %f %f %f\n",j,d_ring[j].absolute-absolute,
+			if (debug) fprintf(stderr,"hist %d %d %f %f %f\n",j,d_ring[j].absolute-absolute,
 				cum,d_ring[j].s.s.min,d_ring[j].s.s.max);
 			n=next_dn(j);
 			if (n == rp) break;
@@ -230,7 +246,7 @@ int contemplate_data(unsigned int absolute, double skew, double errorbar, int fr
 			        search(rp, j, 0, 1, 1, &check);
 			if (check.slope < maxseg[c].slope && check.slope > last_slope &&
 			    (dinit || check.slope < save_min.slope)) {dinit=0; save_min=check; }
-			if (debug) printf("maxseg[%d] = %f *x+ %f\n",
+			if (debug) fprintf(stderr,"maxseg[%d] = %f *x+ %f\n",
 				 c, maxseg[c].slope, maxseg[c].offset);
 			last_slope = maxseg[c].slope;
 			c++;
@@ -250,7 +266,7 @@ int contemplate_data(unsigned int absolute, double skew, double errorbar, int fr
 			        search(rp, j, 1, 0, 0, &check);
 			if (check.slope > minseg[c].slope && check.slope < last_slope &&
 			    (dinit || check.slope < save_max.slope)) {dinit=0; save_max=check; }
-			if (debug) printf("minseg[%d] = %f *x+ %f\n",
+			if (debug) fprintf(stderr,"minseg[%d] = %f *x+ %f\n",
 				 c, minseg[c].slope, minseg[c].offset);
 			last_slope = minseg[c].slope;
 			c++;
@@ -277,7 +293,7 @@ int contemplate_data(unsigned int absolute, double skew, double errorbar, int fr
 				break;
 			if (dinit==0) polygon_point(&maxseg[c]);
 		}
-		if (dinit && debug) printf("found maxseg vs. save_min inconsistency\n");
+		if (dinit && debug) fprintf(stderr,"found maxseg vs. save_min inconsistency\n");
 		if (dinit) inconsistent=1;
 		max_imax = c;
 		maxseg[max_imax] = save_max;
@@ -293,7 +309,7 @@ int contemplate_data(unsigned int absolute, double skew, double errorbar, int fr
 				break;
 			if (dinit==0) polygon_point(&minseg[c]);
 		}
-		if (dinit && debug) printf("found minseg vs. save_max inconsistency\n");
+		if (dinit && debug) fprintf(stderr,"found minseg vs. save_max inconsistency\n");
 		if (dinit) inconsistent=1;
 		min_imax = c;
 		minseg[min_imax] = save_max;
@@ -304,14 +320,14 @@ int contemplate_data(unsigned int absolute, double skew, double errorbar, int fr
 		/*
 		 * Pass 5: decide on a new freq */
 		if (inconsistent) {
-			printf("# inconsistent\n");
+			fprintf(stderr,"# inconsistent\n");
 		} else {
 			delta_f = find_df(&both_sides_now);
-			if (debug) printf("find_df() = %e\n", delta_f);
+			if (debug) fprintf(stderr,"find_df() = %e\n", delta_f);
 			if (both_sides_now)
 				delta_f = find_df_center(&save_min,&save_max);
 			delta_freq = delta_f*65536+.5;
-			if (debug) printf("delta_f %f  delta_freq %d  bsn %d\n", delta_f, delta_freq, both_sides_now);
+			if (debug) fprintf(stderr,"delta_f %f  delta_freq %d  bsn %d\n", delta_f, delta_freq, both_sides_now);
 			computed_freq -= delta_freq;
 			printf ("# box [( %.3f , %.1f ) ",  save_min.slope, save_min.offset);
 			printf (      " ( %.3f , %.1f )] ", save_max.slope, save_max.offset);
